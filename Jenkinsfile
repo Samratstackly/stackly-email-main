@@ -3,12 +3,12 @@ pipeline {
 
     environment {
         GIT_CREDS  = 'github-token-emailapp'
-        GIT_REPO   = 'https://github.com/thestackly/stackly-email.git'
+        GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'deploy-ec2-key'
+        SSH_KEY     = 'email-key'
         DEPLOY_USER = 'ubuntu'
-        DEPLOY_HOST = '172.31.41.124'
+        DEPLOY_HOST = '13.202.78.1'
         APP_DIR     = '/home/ubuntu/stackly-email'
     }
 
