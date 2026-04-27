@@ -9,7 +9,7 @@ pipeline {
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'Sonar'   // ✅ FIXED (must exist in Jenkins)
+        SSH_KEY     = 'Sonar'   // 🔑 MUST exist in Jenkins
         DEPLOY_USER = 'ubuntu'
         DEPLOY_HOST = '52.212.177.7'
         APP_DIR     = '/home/ubuntu/stackly-email'
@@ -27,7 +27,7 @@ pipeline {
             steps {
                 sh '''
                 set -e
-                echo "🔍 Checking required tools"
+                echo "🔍 Checking tools"
 
                 node -v
                 npm -v
@@ -52,7 +52,7 @@ pipeline {
                     npm run build
                     cd ..
                 else
-                    echo "⚠️ No frontend folder found, skipping"
+                    echo "⚠️ No frontend folder found"
                 fi
                 '''
             }
@@ -63,9 +63,10 @@ pipeline {
                 sshagent([env.SSH_KEY]) {
                     sh """
                     set -e
-                    echo "🚀 Deploying code"
+                    echo "🚀 Deploying to EC2"
 
                     rsync -avz --delete \
+                      -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
                       --exclude='.git' \
                       --exclude='node_modules' \
                       --exclude='.env' \
@@ -88,24 +89,25 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         set -e
 
+                        echo "📁 Entering app directory"
                         mkdir -p ${APP_DIR}
                         cd ${APP_DIR}
 
-                        echo "🐍 Setup venv"
+                        echo "🐍 Setting up Python environment"
                         if [ ! -d venv ]; then
                             python3 -m venv venv
                         fi
 
                         source venv/bin/activate
 
-                        echo "📦 Install deps"
+                        echo "⬆️ Installing dependencies"
                         pip install --upgrade pip
                         pip install -r requirements.txt
 
-                        echo "🧠 Migrate"
+                        echo "🧠 Running migrations"
                         python manage.py migrate --noinput
 
-                        echo "📦 Collect static"
+                        echo "📦 Collect static files"
                         python manage.py collectstatic --noinput || true
                     '
                     """
@@ -120,9 +122,9 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         echo "🔄 Restarting services"
 
-                        sudo systemctl restart gunicorn || true
-                        sudo systemctl restart fastapi || true
-                        sudo systemctl restart nginx || true
+                        sudo systemctl restart gunicorn || echo "⚠️ gunicorn not found"
+                        sudo systemctl restart fastapi || echo "⚠️ fastapi not found"
+                        sudo systemctl restart nginx || echo "⚠️ nginx not found"
                     '
                     """
                 }
@@ -134,9 +136,12 @@ pipeline {
                 sshagent([env.SSH_KEY]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                        echo "🩺 Health check"
+                        echo "🩺 Running health check"
 
-                        curl -f http://localhost || exit 1
+                        curl -f http://localhost || {
+                            echo "❌ App not responding"
+                            exit 1
+                        }
                     '
                     """
                 }
@@ -149,7 +154,7 @@ pipeline {
             echo '✅ Deployment successful'
         }
         failure {
-            echo '❌ Deployment failed'
+            echo '❌ Deployment failed – check logs'
         }
     }
 }
