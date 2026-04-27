@@ -1,14 +1,18 @@
 pipeline {
     agent any
 
+    tools {
+        nodejs 'Node18'   // 👈 configure this in Jenkins tools
+    }
+
     environment {
         GIT_CREDS  = 'github-token-emailapp'
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'email-key'
+        SSH_KEY     = 'key-pair'
         DEPLOY_USER = 'ubuntu'
-        DEPLOY_HOST = '13.202.78.1'
+        DEPLOY_HOST = '3.0.181.112'
         APP_DIR     = '/home/ubuntu/stackly-email'
     }
 
@@ -19,6 +23,15 @@ pipeline {
                 git branch: "${GIT_BRANCH}",
                     credentialsId: "${GIT_CREDS}",
                     url: "${GIT_REPO}"
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                echo "🔧 Ensuring required tools are installed"
+                which rsync || sudo apt-get update && sudo apt-get install -y rsync
+                '''
             }
         }
 
@@ -36,14 +49,16 @@ pipeline {
             }
         }
 
-        stage('Deploy & Migrate') {
+        stage('Deploy Code') {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
+                    echo "🚀 Deploying files to server"
+
                     rsync -avz --delete \
                       --exclude='.git' \
                       --exclude='node_modules' \
-                      --exclude='.ssh' \
+                      --exclude='.env' \
                       frontend \
                       django_backend \
                       email_project \
@@ -51,22 +66,36 @@ pipeline {
                       manage.py \
                       requirements.txt \
                       ${DEPLOY_USER}@${DEPLOY_HOST}:${APP_DIR}
+                    """
+                }
+            }
+        }
 
+        stage('Remote Setup & Migrate') {
+            steps {
+                sshagent([env.SSH_KEY]) {
+                    sh """
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         set -e
+
+                        echo "📁 Moving to app directory"
                         cd ${APP_DIR}
 
+                        echo "🐍 Setting up Python environment"
                         if [ ! -d venv ]; then
-                            echo "🔧 Creating virtual environment"
                             python3 -m venv venv
                         fi
 
                         source venv/bin/activate
+
                         pip install --upgrade pip
                         pip install -r requirements.txt
+
+                        echo "🧠 Running migrations"
                         python manage.py migrate --noinput
 
-                        echo "🎨 Frontend build ready (served directly by nginx)"
+                        echo "📦 Collecting static files"
+                        python manage.py collectstatic --noinput || true
                     '
                     """
                 }
@@ -78,7 +107,10 @@ pipeline {
                 sshagent([env.SSH_KEY]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
-                        sudo systemctl restart fastapi
+                        echo "🔄 Restarting services"
+
+                        sudo systemctl restart fastapi || true
+                        sudo systemctl restart nginx || true
                     '
                     """
                 }
