@@ -9,7 +9,7 @@ pipeline {
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'key-pair'   // ✅ FIXED (must exist in Jenkins)
+        SSH_KEY     = 'Sonar'   // ✅ FIXED (must exist in Jenkins)
         DEPLOY_USER = 'ubuntu'
         DEPLOY_HOST = '52.212.177.7'
         APP_DIR     = '/home/ubuntu/stackly-email'
