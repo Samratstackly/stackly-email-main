@@ -10,9 +10,9 @@ pipeline {
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'key-pair'
+        SSH_KEY     = 'sonar'
         DEPLOY_USER = 'ubuntu'
-        DEPLOY_HOST = '3.0.181.112'
+        DEPLOY_HOST = '52.212.177.7'   // ✅ FIXED IP
         APP_DIR     = '/home/ubuntu/stackly-email'
     }
 
@@ -29,13 +29,14 @@ pipeline {
         stage('Check Tools') {
             steps {
                 sh '''
+                set -e
                 echo "🔍 Checking required tools"
 
                 node -v
                 npm -v
 
                 if ! command -v rsync > /dev/null; then
-                    echo "❌ rsync not installed on Jenkins machine"
+                    echo "❌ rsync not installed"
                     exit 1
                 fi
                 '''
@@ -45,11 +46,14 @@ pipeline {
         stage('Build Frontend') {
             steps {
                 sh '''
+                set -e
+
                 if [ -d frontend ]; then
                     echo "📦 Building frontend"
                     cd frontend
                     npm install
                     npm run build
+                    cd ..
                 else
                     echo "⚠️ No frontend folder found, skipping"
                 fi
@@ -61,7 +65,8 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    echo "🚀 Deploying to server"
+                    set -e
+                    echo "🚀 Deploying code to server"
 
                     rsync -avz --delete \
                       --exclude='.git' \
@@ -83,19 +88,21 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
                         set -e
 
                         echo "📁 Entering app directory"
+                        mkdir -p ${APP_DIR}
                         cd ${APP_DIR}
 
-                        echo "🐍 Preparing Python environment"
+                        echo "🐍 Setting up virtual environment"
                         if [ ! -d venv ]; then
                             python3 -m venv venv
                         fi
 
                         source venv/bin/activate
 
+                        echo "⬆️ Installing dependencies"
                         pip install --upgrade pip
                         pip install -r requirements.txt
 
@@ -114,11 +121,29 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
                         echo "🔄 Restarting services"
 
-                        sudo systemctl restart fastapi || echo "⚠️ fastapi service not found"
-                        sudo systemctl restart nginx || echo "⚠️ nginx service not found"
+                        sudo systemctl restart gunicorn || echo "⚠️ gunicorn not found"
+                        sudo systemctl restart fastapi || echo "⚠️ fastapi not found"
+                        sudo systemctl restart nginx || echo "⚠️ nginx not found"
+                    '
+                    """
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sshagent([env.SSH_KEY]) {
+                    sh """
+                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
+                        echo "🩺 Running health check"
+
+                        curl -f http://localhost || {
+                            echo "❌ App is not responding"
+                            exit 1
+                        }
                     '
                     """
                 }
@@ -128,7 +153,7 @@ pipeline {
 
     post {
         success {
-            echo '✅ stackly-email deployed successfully'
+            echo '✅ Deployment successful'
         }
         failure {
             echo '❌ Deployment failed – check logs'
