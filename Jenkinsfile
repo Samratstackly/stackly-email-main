@@ -10,7 +10,7 @@ pipeline {
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'sonar'
+        SSH_KEY     = 'Sonar'
         DEPLOY_USER = 'ubuntu'
         DEPLOY_HOST = '52.212.177.7'   // ✅ FIXED IP
         APP_DIR     = '/home/ubuntu/stackly-email'
