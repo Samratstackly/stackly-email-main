@@ -6,13 +6,12 @@ pipeline {
     }
 
     environment {
-        GIT_CREDS  = 'github-token-emailapp'
         GIT_REPO   = 'https://github.com/Samratstackly/stackly-email-main.git'
         GIT_BRANCH = 'main'
 
-        SSH_KEY     = 'Sonar'
+        SSH_KEY     = 'key-pair'   // ✅ FIXED (must exist in Jenkins)
         DEPLOY_USER = 'ubuntu'
-        DEPLOY_HOST = '52.212.177.7'   // ✅ FIXED IP
+        DEPLOY_HOST = '52.212.177.7'
         APP_DIR     = '/home/ubuntu/stackly-email'
     }
 
@@ -20,9 +19,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git branch: "${GIT_BRANCH}",
-                    credentialsId: "${GIT_CREDS}",
-                    url: "${GIT_REPO}"
+                git url: "${GIT_REPO}", branch: "${GIT_BRANCH}"
             }
         }
 
@@ -66,7 +63,7 @@ pipeline {
                 sshagent([env.SSH_KEY]) {
                     sh """
                     set -e
-                    echo "🚀 Deploying code to server"
+                    echo "🚀 Deploying code"
 
                     rsync -avz --delete \
                       --exclude='.git' \
@@ -88,28 +85,27 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         set -e
 
-                        echo "📁 Entering app directory"
                         mkdir -p ${APP_DIR}
                         cd ${APP_DIR}
 
-                        echo "🐍 Setting up virtual environment"
+                        echo "🐍 Setup venv"
                         if [ ! -d venv ]; then
                             python3 -m venv venv
                         fi
 
                         source venv/bin/activate
 
-                        echo "⬆️ Installing dependencies"
+                        echo "📦 Install deps"
                         pip install --upgrade pip
                         pip install -r requirements.txt
 
-                        echo "🧠 Running migrations"
+                        echo "🧠 Migrate"
                         python manage.py migrate --noinput
 
-                        echo "📦 Collecting static files"
+                        echo "📦 Collect static"
                         python manage.py collectstatic --noinput || true
                     '
                     """
@@ -121,12 +117,12 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         echo "🔄 Restarting services"
 
-                        sudo systemctl restart gunicorn || echo "⚠️ gunicorn not found"
-                        sudo systemctl restart fastapi || echo "⚠️ fastapi not found"
-                        sudo systemctl restart nginx || echo "⚠️ nginx not found"
+                        sudo systemctl restart gunicorn || true
+                        sudo systemctl restart fastapi || true
+                        sudo systemctl restart nginx || true
                     '
                     """
                 }
@@ -137,13 +133,10 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    ssh ${DEPLOY_USER}@${DEPLOY_HOST} '
-                        echo "🩺 Running health check"
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
+                        echo "🩺 Health check"
 
-                        curl -f http://localhost || {
-                            echo "❌ App is not responding"
-                            exit 1
-                        }
+                        curl -f http://localhost || exit 1
                     '
                     """
                 }
@@ -156,7 +149,7 @@ pipeline {
             echo '✅ Deployment successful'
         }
         failure {
-            echo '❌ Deployment failed – check logs'
+            echo '❌ Deployment failed'
         }
     }
 }
