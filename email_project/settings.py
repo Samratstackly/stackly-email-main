@@ -191,3 +191,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
+import os
+ 
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
