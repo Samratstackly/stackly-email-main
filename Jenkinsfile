@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     tools {
-        nodejs 'Node18'   // 👈 configure this in Jenkins tools
+        nodejs 'Node18'
     }
 
     environment {
@@ -26,11 +26,18 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Check Tools') {
             steps {
                 sh '''
-                echo "🔧 Ensuring required tools are installed"
-                which rsync || sudo apt-get update && sudo apt-get install -y rsync
+                echo "🔍 Checking required tools"
+
+                node -v
+                npm -v
+
+                if ! command -v rsync > /dev/null; then
+                    echo "❌ rsync not installed on Jenkins machine"
+                    exit 1
+                fi
                 '''
             }
         }
@@ -39,11 +46,12 @@ pipeline {
             steps {
                 sh '''
                 if [ -d frontend ]; then
+                    echo "📦 Building frontend"
                     cd frontend
                     npm install
                     npm run build
                 else
-                    echo "⚠️ Frontend directory not found, skipping build"
+                    echo "⚠️ No frontend folder found, skipping"
                 fi
                 '''
             }
@@ -53,7 +61,7 @@ pipeline {
             steps {
                 sshagent([env.SSH_KEY]) {
                     sh """
-                    echo "🚀 Deploying files to server"
+                    echo "🚀 Deploying to server"
 
                     rsync -avz --delete \
                       --exclude='.git' \
@@ -78,10 +86,10 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         set -e
 
-                        echo "📁 Moving to app directory"
+                        echo "📁 Entering app directory"
                         cd ${APP_DIR}
 
-                        echo "🐍 Setting up Python environment"
+                        echo "🐍 Preparing Python environment"
                         if [ ! -d venv ]; then
                             python3 -m venv venv
                         fi
@@ -109,8 +117,8 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} '
                         echo "🔄 Restarting services"
 
-                        sudo systemctl restart fastapi || true
-                        sudo systemctl restart nginx || true
+                        sudo systemctl restart fastapi || echo "⚠️ fastapi service not found"
+                        sudo systemctl restart nginx || echo "⚠️ nginx service not found"
                     '
                     """
                 }
@@ -123,7 +131,7 @@ pipeline {
             echo '✅ stackly-email deployed successfully'
         }
         failure {
-            echo '❌ Deployment failed – check stage logs'
+            echo '❌ Deployment failed – check logs'
         }
     }
 }
